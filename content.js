@@ -7,6 +7,9 @@
     SPEAKER_NAME: ".NWpY1d",
     TEXT_CONTAINER: ".ygicle",
   };
+  const DEFAULT_AUTO_SAVE_INTERVAL_SECONDS = 2;
+  const MIN_AUTO_SAVE_INTERVAL_SECONDS = 1;
+  const MAX_AUTO_SAVE_INTERVAL_SECONDS = 60;
 
   const transcript = [];
   let turnMap = new WeakMap();
@@ -19,6 +22,7 @@
   let autoSaveFilename = null;
   let autoSaveError = null;
   let autoSaveActive = false;
+  let autoSaveIntervalMs = DEFAULT_AUTO_SAVE_INTERVAL_SECONDS * 1000;
 
   function ensureEntry(turnEl) {
     let entry = turnMap.get(turnEl);
@@ -31,8 +35,16 @@
     return entry;
   }
 
+  function isCaptionTextNode(node) {
+    return (
+      node?.nodeType === Node.TEXT_NODE &&
+      node.parentElement?.matches?.(SELECTORS.TEXT_CONTAINER)
+    );
+  }
+
   function resolveEntry(node) {
-    const turn = node.parentElement?.closest(SELECTORS.TURN_BLOCK);
+    if (!isCaptionTextNode(node)) return null;
+    const turn = node.parentElement.closest(SELECTORS.TURN_BLOCK);
     if (!turn) return null;
     return ensureEntry(turn);
   }
@@ -72,8 +84,6 @@
           }
 
           if (added.nodeType === Node.TEXT_NODE) {
-            const container = added.parentElement;
-            if (!container?.matches?.(SELECTORS.TEXT_CONTAINER)) continue;
             const entry = resolveEntry(added);
             if (!entry) continue;
             seedTextNode(added, entry);
@@ -181,7 +191,7 @@
     if (epoch !== saveEpoch) return;
     await saveTranscriptToFile();
     if (autoSaveActive && epoch === saveEpoch) {
-      saveInterval = setTimeout(() => saveLoop(epoch), 20000);
+      saveInterval = setTimeout(() => saveLoop(epoch), autoSaveIntervalMs);
     }
   }
 
@@ -208,11 +218,20 @@
     chrome.runtime.sendMessage({ type: "CLEAR_AUTO_SAVE_FILE" }).catch(() => {});
   }
 
-  function startAutoSave(filename) {
+  function startAutoSave(filename, intervalSeconds) {
+    const parsedIntervalSeconds = Number.parseInt(String(intervalSeconds), 10);
+    const normalizedIntervalSeconds = Number.isFinite(parsedIntervalSeconds)
+      ? Math.min(MAX_AUTO_SAVE_INTERVAL_SECONDS, Math.max(MIN_AUTO_SAVE_INTERVAL_SECONDS, parsedIntervalSeconds))
+      : DEFAULT_AUTO_SAVE_INTERVAL_SECONDS;
+    autoSaveIntervalMs = normalizedIntervalSeconds * 1000;
     autoSaveFilename = filename || "meet-transcript.txt";
     autoSaveError = null;
     startSaveTimer();
-    return { ok: true, filename: autoSaveFilename };
+    return {
+      ok: true,
+      filename: autoSaveFilename,
+      intervalSeconds: normalizedIntervalSeconds,
+    };
   }
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -231,6 +250,7 @@
         autoSavePending: false,
         autoSaveFilename,
         autoSaveError,
+        autoSaveIntervalSeconds: autoSaveIntervalMs / 1000,
       });
       return;
     }
@@ -241,7 +261,7 @@
     }
 
     if (message.type === "START_AUTO_SAVE") {
-      sendResponse(startAutoSave(message.filename));
+      sendResponse(startAutoSave(message.filename, message.intervalSeconds));
       return;
     }
 

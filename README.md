@@ -7,7 +7,7 @@ Chrome extension that captures closed captions from Google Meet in real time and
 - Real-time caption capture via DOM observation
 - Export as plain text with timestamps and speaker names
 - Copy to clipboard or download as `.txt`
-- Auto-save transcript snapshots every 20 seconds
+- Auto-save transcript snapshots on a configurable interval
 - Direct file auto-save when the browser exposes a file picker
 - Internal extension-storage fallback when file saving is unavailable
 
@@ -22,7 +22,7 @@ Chrome extension that captures closed captions from Google Meet in real time and
 1. Join a Google Meet call
 2. Turn on captions (CC button)
 3. Click the extension icon to see status and export
-4. Optionally enable auto-save to keep the transcript updated every 20 seconds
+4. Optionally enable auto-save and choose how often it updates the transcript
 
 ## Export format
 
@@ -33,9 +33,9 @@ Chrome extension that captures closed captions from Google Meet in real time and
 
 ## Auto-save
 
-Click "Enable auto-save" in the popup.
+Click "Enable auto-save" in the popup. You can set the save interval between 1 and 60 seconds (default: 2 seconds).
 
-- If the browser exposes `showSaveFilePicker()`, the extension writes the transcript to the selected file every 20 seconds, overwriting the previous contents.
+- If the browser exposes `showSaveFilePicker()`, the extension writes the transcript to the selected file at the chosen interval, overwriting the previous contents.
 - If file saving is unavailable in the current browser context, the extension falls back to internal extension storage. The latest saved snapshot can still be copied or downloaded from the popup later.
 
 Internal auto-save is not continuous after the Meet tab is closed, but the last saved snapshot remains recoverable from the popup until you clear it.

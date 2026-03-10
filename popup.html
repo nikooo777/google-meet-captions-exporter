@@ -23,6 +23,11 @@
 
   <div id="auto-save" class="auto-save">
     <div id="auto-save-off">
+      <label class="auto-save-interval" for="auto-save-interval">
+        <span>Save every</span>
+        <input id="auto-save-interval" type="number" min="1" max="60" step="1" value="2">
+        <span>seconds</span>
+      </label>
       <button id="btn-auto-save">Enable auto-save</button>
     </div>
     <div id="auto-save-pending" class="hidden">
@@ -31,6 +36,7 @@
     </div>
     <div id="auto-save-on" class="hidden">
       <div class="auto-save-info">Auto-saving to: <span id="auto-save-filename"></span></div>
+      <div class="auto-save-info">Interval: <span id="auto-save-interval-active"></span></div>
       <button id="btn-auto-save-stop" class="btn-danger">Stop auto-save</button>
     </div>
     <div id="auto-save-error" class="hidden">

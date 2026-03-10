@@ -13,10 +13,35 @@ const autoSaveOn = document.getElementById("auto-save-on");
 const autoSaveErrorEl = document.getElementById("auto-save-error");
 const autoSaveRetryPending = document.getElementById("auto-save-retry-pending");
 const autoSaveFilenameEl = document.getElementById("auto-save-filename");
+const autoSaveIntervalInput = document.getElementById("auto-save-interval");
+const autoSaveIntervalActiveEl = document.getElementById("auto-save-interval-active");
 const autoSaveContainer = document.getElementById("auto-save");
 const DEFAULT_WARNING_TEXT =
   "Export your transcript before closing the Meet tab — it cannot be recovered after.";
+const DEFAULT_AUTO_SAVE_INTERVAL_SECONDS = 2;
+const MIN_AUTO_SAVE_INTERVAL_SECONDS = 1;
+const MAX_AUTO_SAVE_INTERVAL_SECONDS = 60;
+const AUTO_SAVE_INTERVAL_STORAGE_KEY = "autoSaveIntervalSeconds";
 let recoveryText = "";
+
+function normalizeAutoSaveIntervalSeconds(value) {
+  const parsed = Number.parseInt(String(value), 10);
+  if (!Number.isFinite(parsed)) return DEFAULT_AUTO_SAVE_INTERVAL_SECONDS;
+  return Math.min(MAX_AUTO_SAVE_INTERVAL_SECONDS, Math.max(MIN_AUTO_SAVE_INTERVAL_SECONDS, parsed));
+}
+
+function getPreferredAutoSaveIntervalSeconds() {
+  return normalizeAutoSaveIntervalSeconds(
+    window.localStorage.getItem(AUTO_SAVE_INTERVAL_STORAGE_KEY)
+  );
+}
+
+function setPreferredAutoSaveIntervalSeconds(value) {
+  const seconds = normalizeAutoSaveIntervalSeconds(value);
+  window.localStorage.setItem(AUTO_SAVE_INTERVAL_STORAGE_KEY, String(seconds));
+  autoSaveIntervalInput.value = String(seconds);
+  return seconds;
+}
 
 function showError(msg) {
   errorEl.textContent = msg;
@@ -49,6 +74,7 @@ function showAutoSaveState(response) {
   if (response.autoSaving) {
     autoSaveOn.classList.remove("hidden");
     autoSaveFilenameEl.textContent = response.autoSaveFilename || "unknown";
+    autoSaveIntervalActiveEl.textContent = `${response.autoSaveIntervalSeconds || DEFAULT_AUTO_SAVE_INTERVAL_SECONDS}s`;
   } else if (response.autoSavePending) {
     if (response._inlinePending) {
       autoSavePending.classList.remove("hidden");
@@ -92,6 +118,7 @@ async function getTranscriptText() {
 async function handleStartAutoSave() {
   try {
     let filename = "Extension storage (download later)";
+    const intervalSeconds = setPreferredAutoSaveIntervalSeconds(autoSaveIntervalInput.value);
 
     if (typeof window.showSaveFilePicker === "function") {
       const handle = await window.showSaveFilePicker({
@@ -117,6 +144,7 @@ async function handleStartAutoSave() {
     const response = await sendMessage({
       type: "START_AUTO_SAVE",
       filename,
+      intervalSeconds,
     });
 
     if (response.ok) {
@@ -124,6 +152,7 @@ async function handleStartAutoSave() {
       showAutoSaveState({
         autoSaving: true,
         autoSaveFilename: response.filename,
+        autoSaveIntervalSeconds: response.intervalSeconds,
       });
     } else {
       throw new Error(response?.error || "Failed to start auto-save");
@@ -162,6 +191,10 @@ async function refreshStatus() {
         "Internal auto-save is enabled. Download the transcript when you're done.";
     }
 
+    if (response.autoSaving && response.autoSaveIntervalSeconds) {
+      setPreferredAutoSaveIntervalSeconds(response.autoSaveIntervalSeconds);
+    }
+
     infoEl.textContent = response.entryCount > 0
       ? `${response.entryCount} caption entries captured`
       : "No captions captured yet";
@@ -180,7 +213,7 @@ async function refreshStatus() {
         statusText.textContent = "Recovered auto-save";
         infoEl.textContent = "Recovered the last internally saved transcript snapshot";
         warningEl.textContent =
-          "This recovery copy may be up to 20 seconds stale. Download it before clearing it.";
+          "This recovery copy may be slightly stale. Download it before clearing it.";
         warningEl.classList.remove("hidden");
         setButtons(1);
         return;
@@ -192,6 +225,11 @@ async function refreshStatus() {
     showError("Open a Google Meet tab to start capturing captions");
   }
 }
+
+autoSaveIntervalInput.value = String(getPreferredAutoSaveIntervalSeconds());
+autoSaveIntervalInput.addEventListener("change", () => {
+  setPreferredAutoSaveIntervalSeconds(autoSaveIntervalInput.value);
+});
 
 document.getElementById("btn-auto-save").addEventListener("click", handleStartAutoSave);
 
