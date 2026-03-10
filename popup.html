@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="header">
+    <h1>Meet Captions</h1>
+    <div id="status" class="status waiting">
+      <span class="dot"></span>
+      <span id="status-text">Checking...</span>
+    </div>
+  </div>
+
+  <div id="info" class="info"></div>
+
+  <div id="warning" class="warning hidden">
+    Export your transcript before closing the Meet tab — it cannot be recovered after.
+  </div>
+
+  <div id="error" class="error hidden"></div>
+
+  <div class="actions">
+    <button id="btn-copy" disabled>Copy to Clipboard</button>
+    <button id="btn-download" disabled>Download as TXT</button>
+    <button id="btn-clear" class="btn-danger" disabled>Clear</button>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
