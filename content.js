@@ -15,6 +15,11 @@
   let captionObserver = null;
   let recording = false;
 
+  let saveInterval = null;
+  let autoSaveFilename = null;
+  let autoSaveError = null;
+  let autoSaveActive = false;
+
   function ensureEntry(turnEl) {
     let entry = turnMap.get(turnEl);
     if (entry) return entry;
@@ -151,6 +156,65 @@
     return lines.join("\n");
   }
 
+  let saveEpoch = 0;
+
+  async function saveTranscriptToFile() {
+    if (!autoSaveActive) return;
+    const text = formatTranscript();
+    if (!text) return;
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: "WRITE_AUTO_SAVE_FILE",
+        text,
+      });
+      if (!response?.ok) {
+        throw new Error(response?.error || "Write failed");
+      }
+      autoSaveError = null;
+    } catch (err) {
+      autoSaveError = err.message || "Write failed";
+      stopAutoSave();
+    }
+  }
+
+  async function saveLoop(epoch) {
+    if (epoch !== saveEpoch) return;
+    await saveTranscriptToFile();
+    if (autoSaveActive && epoch === saveEpoch) {
+      saveInterval = setTimeout(() => saveLoop(epoch), 20000);
+    }
+  }
+
+  function startSaveTimer() {
+    saveEpoch++;
+    autoSaveActive = true;
+    if (saveInterval) clearTimeout(saveInterval);
+    saveInterval = null;
+    saveLoop(saveEpoch);
+  }
+
+  // stopAutoSave prevents new writes from starting but does not abort a write
+  // already in progress. An in-flight createWritable/write/close will finish
+  // with the data it captured before stop. Aborting mid-write could leave the
+  // file in a corrupted (partially written) state.
+  function stopAutoSave() {
+    saveEpoch++;
+    autoSaveActive = false;
+    if (saveInterval) {
+      clearTimeout(saveInterval);
+      saveInterval = null;
+    }
+    autoSaveFilename = null;
+    chrome.runtime.sendMessage({ type: "CLEAR_AUTO_SAVE_FILE" }).catch(() => {});
+  }
+
+  function startAutoSave(filename) {
+    autoSaveFilename = filename || "meet-transcript.txt";
+    autoSaveError = null;
+    startSaveTimer();
+    return { ok: true, filename: autoSaveFilename };
+  }
+
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message.type === "GET_STATUS") {
       const entryCount = transcript.filter(
@@ -160,12 +224,37 @@
             .join("")
             .trim().length > 0
       ).length;
-      sendResponse({ recording, entryCount });
+      sendResponse({
+        recording,
+        entryCount,
+        autoSaving: autoSaveActive,
+        autoSavePending: false,
+        autoSaveFilename,
+        autoSaveError,
+      });
       return;
     }
 
     if (message.type === "GET_TRANSCRIPT") {
       sendResponse({ text: formatTranscript() });
+      return;
+    }
+
+    if (message.type === "START_AUTO_SAVE") {
+      sendResponse(startAutoSave(message.filename));
+      return;
+    }
+
+    if (message.type === "STOP_AUTO_SAVE") {
+      stopAutoSave();
+      autoSaveError = null;
+      sendResponse({ ok: true });
+      return;
+    }
+
+    if (message.type === "DISMISS_AUTO_SAVE_ERROR") {
+      autoSaveError = null;
+      sendResponse({ ok: true });
       return;
     }
 
@@ -178,6 +267,7 @@
       transcript.length = 0;
       turnMap = new WeakMap();
       nodeMap = new WeakMap();
+      stopAutoSave();
       sendResponse({ ok: true });
       return;
     }

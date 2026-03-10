@@ -21,12 +21,41 @@
 
   <div id="error" class="error hidden"></div>
 
+  <div id="auto-save" class="auto-save">
+    <div id="auto-save-off">
+      <button id="btn-auto-save">Enable auto-save</button>
+    </div>
+    <div id="auto-save-pending" class="hidden">
+      <div class="auto-save-info">Click the button on the Meet page to choose a save file</div>
+      <button id="btn-auto-save-cancel" class="btn-danger">Cancel</button>
+    </div>
+    <div id="auto-save-on" class="hidden">
+      <div class="auto-save-info">Auto-saving to: <span id="auto-save-filename"></span></div>
+      <button id="btn-auto-save-stop" class="btn-danger">Stop auto-save</button>
+    </div>
+    <div id="auto-save-error" class="hidden">
+      <div class="auto-save-error-msg"></div>
+      <div class="auto-save-error-actions">
+        <button id="btn-auto-save-retry">Retry</button>
+        <button id="btn-auto-save-dismiss">Dismiss</button>
+      </div>
+    </div>
+    <div id="auto-save-retry-pending" class="hidden">
+      <div class="auto-save-info">Auto-save setup in progress</div>
+      <div class="auto-save-error-actions">
+        <button id="btn-auto-save-retry2">Retry</button>
+        <button id="btn-auto-save-cancel2" class="btn-danger">Cancel</button>
+      </div>
+    </div>
+  </div>
+
   <div class="actions">
     <button id="btn-copy" disabled>Copy to Clipboard</button>
     <button id="btn-download" disabled>Download as TXT</button>
     <button id="btn-clear" class="btn-danger" disabled>Clear</button>
   </div>
 
+  <script src="auto_save_db.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

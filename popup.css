@@ -76,6 +76,31 @@ h1 {
   display: none;
 }
 
+.auto-save {
+  margin-bottom: 12px;
+}
+
+.auto-save-info {
+  font-size: 12px;
+  color: #5f6368;
+  margin-bottom: 6px;
+}
+
+.auto-save-error-msg {
+  font-size: 12px;
+  color: #d93025;
+  margin-bottom: 6px;
+}
+
+.auto-save-error-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.auto-save-error-actions button {
+  flex: 1;
+}
+
 .actions {
   display: flex;
   flex-direction: column;

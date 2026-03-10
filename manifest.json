@@ -3,8 +3,9 @@
   "name": "Google Meet Captions Exporter",
   "version": "1.0.0",
   "description": "Export closed captions from Google Meet as a transcript",
-  "permissions": [],
-  "host_permissions": [],
+  "background": {
+    "service_worker": "background.js"
+  },
   "content_scripts": [
     {
       "matches": ["https://meet.google.com/*"],
