@@ -152,3 +152,20 @@ button:disabled {
 .btn-danger:hover:not(:disabled) {
   background: #fce8e6;
 }
+
+.footer {
+  text-align: center;
+  font-size: 11px;
+  color: #9aa0a6;
+  margin-top: 12px;
+}
+
+.footer a {
+  color: #9aa0a6;
+  text-decoration: none;
+}
+
+.footer a:hover {
+  color: #5f6368;
+  text-decoration: underline;
+}

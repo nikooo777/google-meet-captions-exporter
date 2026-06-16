@@ -48,3 +48,7 @@ Internal auto-save is not continuous after the Meet tab is closed, but the last 
 - Side panel captions only (bottom overlay mode not yet supported)
 - Panel close/reopen may duplicate recent entries
 - Clearing mid-sentence may include some pre-clear text in the next capture
+
+## Author
+
+[Nikooo777](https://github.com/nikooo777)
