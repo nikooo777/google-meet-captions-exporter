@@ -7,9 +7,9 @@
     SPEAKER_NAME: ".NWpY1d",
     TEXT_CONTAINER: ".ygicle",
   };
-  const DEFAULT_AUTO_SAVE_INTERVAL_SECONDS = 2;
-  const MIN_AUTO_SAVE_INTERVAL_SECONDS = 1;
-  const MAX_AUTO_SAVE_INTERVAL_SECONDS = 60;
+  const STREAM_INTERVAL_MS = 2000;
+  const CAPTIONS_BUTTON_LABEL = "turn on captions";
+  const CAPTION_ENABLE_THROTTLE_MS = 500;
 
   const transcript = [];
   let turnMap = new WeakMap();
@@ -18,11 +18,12 @@
   let captionObserver = null;
   let recording = false;
 
-  let saveInterval = null;
-  let autoSaveFilename = null;
-  let autoSaveError = null;
-  let autoSaveActive = false;
-  let autoSaveIntervalMs = DEFAULT_AUTO_SAVE_INTERVAL_SECONDS * 1000;
+  let streamInterval = null;
+  let streamEpoch = 0;
+  let bridgeStreaming = false;
+  let bridgeReason = null;
+  let bridgeError = null;
+  let lastBridgeSuccessAt = null;
 
   function ensureEntry(turnEl) {
     let entry = turnMap.get(turnEl);
@@ -63,7 +64,8 @@
 
   function seedTextNode(textNode, entry) {
     if (nodeMap.has(textNode)) return;
-    const segment = { text: textNode.textContent, startTime: Date.now() };
+    const now = Date.now();
+    const segment = { text: textNode.textContent, startTime: now, updatedAt: now };
     entry.segments.push(segment);
     nodeMap.set(textNode, segment);
   }
@@ -96,10 +98,12 @@
         let segment = nodeMap.get(textNode);
         if (segment) {
           segment.text = textNode.textContent;
+          segment.updatedAt = Date.now();
         } else {
           const entry = resolveEntry(textNode);
           if (!entry) continue;
-          segment = { text: textNode.textContent, startTime: Date.now() };
+          const now = Date.now();
+          segment = { text: textNode.textContent, startTime: now, updatedAt: now };
           entry.segments.push(segment);
           nodeMap.set(textNode, segment);
         }
@@ -140,6 +144,7 @@
     if (existing) attachCaptionObserver(existing);
 
     const bodyObserver = new MutationObserver(() => {
+      maybeEnableCaptions();
       const region = document.querySelector(SELECTORS.CAPTION_REGION);
       if (region && !captionObserver) {
         attachCaptionObserver(region);
@@ -166,72 +171,142 @@
     return lines.join("\n");
   }
 
-  let saveEpoch = 0;
+  function getMeetingId() {
+    const match = location.pathname.match(/[a-z]{3}-[a-z]{4}-[a-z]{3}/);
+    return match ? match[0] : "";
+  }
 
-  async function saveTranscriptToFile() {
-    if (!autoSaveActive) return;
-    const text = formatTranscript();
-    if (!text) return;
+  function serializeTranscript() {
+    const entries = [];
+    for (const entry of transcript) {
+      const text = entry.segments
+        .map((s) => s.text)
+        .join("")
+        .trim();
+      if (!text) continue;
+      let updatedAt = entry.timestamp;
+      for (const segment of entry.segments) {
+        if (segment.updatedAt > updatedAt) updatedAt = segment.updatedAt;
+      }
+      entries.push({
+        speaker: entry.speaker,
+        timestamp: entry.timestamp,
+        text,
+        updated_at: updatedAt,
+      });
+    }
+    return { meeting_id: getMeetingId(), captured_at: Date.now(), entries };
+  }
+
+  async function pushToBridge() {
+    const snapshot = serializeTranscript();
     try {
       const response = await chrome.runtime.sendMessage({
-        type: "WRITE_AUTO_SAVE_FILE",
-        text,
+        type: "PUSH_TO_BRIDGE",
+        snapshot,
       });
-      if (!response?.ok) {
-        throw new Error(response?.error || "Write failed");
+      if (response?.ok) {
+        bridgeReason = null;
+        bridgeError = null;
+        lastBridgeSuccessAt = Date.now();
+      } else {
+        bridgeReason = response?.reason || "unreachable";
+        bridgeError = response?.error || null;
       }
-      autoSaveError = null;
     } catch (err) {
-      autoSaveError = err.message || "Write failed";
-      stopAutoSave();
+      bridgeReason = "unreachable";
+      bridgeError = err?.message || "send failed";
     }
   }
 
-  async function saveLoop(epoch) {
-    if (epoch !== saveEpoch) return;
-    await saveTranscriptToFile();
-    if (autoSaveActive && epoch === saveEpoch) {
-      saveInterval = setTimeout(() => saveLoop(epoch), autoSaveIntervalMs);
+  async function streamLoop(epoch) {
+    if (epoch !== streamEpoch) return;
+    await pushToBridge();
+    if (bridgeStreaming && epoch === streamEpoch) {
+      streamInterval = setTimeout(() => streamLoop(epoch), STREAM_INTERVAL_MS);
     }
   }
 
-  function startSaveTimer() {
-    saveEpoch++;
-    autoSaveActive = true;
-    if (saveInterval) clearTimeout(saveInterval);
-    saveInterval = null;
-    saveLoop(saveEpoch);
+  function startBridgeStream() {
+    streamEpoch++;
+    bridgeStreaming = true;
+    bridgeReason = null;
+    bridgeError = null;
+    if (streamInterval) clearTimeout(streamInterval);
+    streamInterval = null;
+    streamLoop(streamEpoch);
   }
 
-  // stopAutoSave prevents new writes from starting but does not abort a write
-  // already in progress. An in-flight createWritable/write/close will finish
-  // with the data it captured before stop. Aborting mid-write could leave the
-  // file in a corrupted (partially written) state.
-  function stopAutoSave() {
-    saveEpoch++;
-    autoSaveActive = false;
-    if (saveInterval) {
-      clearTimeout(saveInterval);
-      saveInterval = null;
+  function stopBridgeStream() {
+    streamEpoch++;
+    bridgeStreaming = false;
+    if (streamInterval) {
+      clearTimeout(streamInterval);
+      streamInterval = null;
     }
-    autoSaveFilename = null;
-    chrome.runtime.sendMessage({ type: "CLEAR_AUTO_SAVE_FILE" }).catch(() => {});
+    bridgeReason = null;
+    bridgeError = null;
   }
 
-  function startAutoSave(filename, intervalSeconds) {
-    const parsedIntervalSeconds = Number.parseInt(String(intervalSeconds), 10);
-    const normalizedIntervalSeconds = Number.isFinite(parsedIntervalSeconds)
-      ? Math.min(MAX_AUTO_SAVE_INTERVAL_SECONDS, Math.max(MIN_AUTO_SAVE_INTERVAL_SECONDS, parsedIntervalSeconds))
-      : DEFAULT_AUTO_SAVE_INTERVAL_SECONDS;
-    autoSaveIntervalMs = normalizedIntervalSeconds * 1000;
-    autoSaveFilename = filename || "meet-transcript.txt";
-    autoSaveError = null;
-    startSaveTimer();
-    return {
-      ok: true,
-      filename: autoSaveFilename,
-      intervalSeconds: normalizedIntervalSeconds,
-    };
+  async function syncBridgeFromConfig() {
+    let cfg;
+    try {
+      cfg = await chrome.storage.local.get([
+        "bridgeEnabled",
+        "bridgeUrl",
+        "bridgeToken",
+      ]);
+    } catch {
+      return;
+    }
+    const hasConfig =
+      !!cfg.bridgeToken?.trim() && !!cfg.bridgeUrl?.trim();
+    const enabled = hasConfig && cfg.bridgeEnabled !== false;
+    if (enabled && !bridgeStreaming) {
+      startBridgeStream();
+    } else if (!enabled && bridgeStreaming) {
+      stopBridgeStream();
+    }
+  }
+
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== "local") return;
+    if (changes.bridgeEnabled || changes.bridgeUrl || changes.bridgeToken) {
+      syncBridgeFromConfig();
+    }
+  });
+
+  // Best-effort: turn on Meet captions once when we enter a meeting. Driven by
+  // the body observer so it fires on the lobby→meeting transition — the
+  // "Turn on captions" button does not exist while you're still in the lobby,
+  // which can last arbitrarily long. The control is localized and may live
+  // behind the "More options" menu in some layouts, in which case it won't be
+  // found — capture still works if the user enables captions manually.
+  let captionsClicked = false;
+  let lastCaptionAttempt = 0;
+
+  function findCaptionsButton() {
+    const els = document.querySelectorAll(
+      'button[aria-label], [role="button"][aria-label]'
+    );
+    for (const el of els) {
+      const label = (el.getAttribute("aria-label") || "").toLowerCase();
+      if (label.startsWith(CAPTIONS_BUTTON_LABEL)) return el;
+    }
+    return null;
+  }
+
+  function maybeEnableCaptions() {
+    if (captionsClicked) return;
+    if (document.querySelector(SELECTORS.CAPTION_REGION)) return;
+    const now = Date.now();
+    if (now - lastCaptionAttempt < CAPTION_ENABLE_THROTTLE_MS) return;
+    lastCaptionAttempt = now;
+    const button = findCaptionsButton();
+    if (button) {
+      button.click();
+      captionsClicked = true;
+    }
   }
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -246,11 +321,10 @@
       sendResponse({
         recording,
         entryCount,
-        autoSaving: autoSaveActive,
-        autoSavePending: false,
-        autoSaveFilename,
-        autoSaveError,
-        autoSaveIntervalSeconds: autoSaveIntervalMs / 1000,
+        bridgeStreaming,
+        bridgeReason,
+        bridgeError,
+        lastBridgeSuccessAt,
       });
       return;
     }
@@ -260,38 +334,20 @@
       return;
     }
 
-    if (message.type === "START_AUTO_SAVE") {
-      sendResponse(startAutoSave(message.filename, message.intervalSeconds));
-      return;
-    }
-
-    if (message.type === "STOP_AUTO_SAVE") {
-      stopAutoSave();
-      autoSaveError = null;
-      sendResponse({ ok: true });
-      return;
-    }
-
-    if (message.type === "DISMISS_AUTO_SAVE_ERROR") {
-      autoSaveError = null;
-      sendResponse({ ok: true });
-      return;
-    }
-
-    // Known v1 limitation: text nodes actively being refined at clear time
-    // will include their full textContent (including pre-clear words) when
-    // the next characterData mutation lazily creates a segment. Meet revises
-    // entire node content during refinement, so there's no reliable way to
-    // subtract a pre-clear prefix.
+    // Clearing while a node is mid-revision can fold pre-clear text into the
+    // next captured segment; Meet rewrites whole nodes during refinement, so
+    // there's no reliable way to subtract a pre-clear prefix.
     if (message.type === "CLEAR_TRANSCRIPT") {
       transcript.length = 0;
       turnMap = new WeakMap();
       nodeMap = new WeakMap();
-      stopAutoSave();
+      if (bridgeStreaming) pushToBridge();
       sendResponse({ ok: true });
       return;
     }
   });
 
   startBodyObserver();
+  maybeEnableCaptions();
+  syncBridgeFromConfig();
 })();

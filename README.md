@@ -7,9 +7,8 @@ Chrome extension that captures closed captions from Google Meet in real time and
 - Real-time caption capture via DOM observation
 - Export as plain text with timestamps and speaker names
 - Copy to clipboard or download as `.txt`
-- Auto-save transcript snapshots on a configurable interval
-- Direct file auto-save when the browser exposes a file picker
-- Internal extension-storage fallback when file saving is unavailable
+- Automatically enables captions and starts capturing when you join a meeting
+- Live transcript access for LLM assistants via a local MCP bridge (Claude, Codex, …)
 
 ## Install
 
@@ -19,10 +18,9 @@ Chrome extension that captures closed captions from Google Meet in real time and
 
 ## Usage
 
-1. Join a Google Meet call
-2. Turn on captions (CC button)
-3. Click the extension icon to see status and export
-4. Optionally enable auto-save and choose how often it updates the transcript
+1. Join a Google Meet call — the extension turns captions on automatically (use the CC button manually if your Meet layout hides the control)
+2. Click the extension icon to see status, copy, or download the transcript
+3. Optionally point it at a local MCP bridge for live LLM access (see below)
 
 ## Export format
 
@@ -31,20 +29,17 @@ Chrome extension that captures closed captions from Google Meet in real time and
 [10:05:30] Bob: Sounds good, I have the slides ready.
 ```
 
-## Auto-save
+## Live transcript bridge (MCP)
 
-Click "Enable auto-save" in the popup. You can set the save interval between 1 and 60 seconds (default: 2 seconds).
+During a call you can let an LLM assistant read the rolling transcript on demand — ask it to help craft a reply and it pulls the latest captions itself. The extension streams the transcript to a small local Go process (`meet-bridge`) that exposes it over the Model Context Protocol, so any MCP client (Claude Desktop/Code, Codex) can attach.
 
-- If the browser exposes `showSaveFilePicker()`, the extension writes the transcript to the selected file at the chosen interval, overwriting the previous contents.
-- If file saving is unavailable in the current browser context, the extension falls back to internal extension storage. The latest saved snapshot can still be copied or downloaded from the popup later.
-
-Internal auto-save is not continuous after the Meet tab is closed, but the last saved snapshot remains recoverable from the popup until you clear it.
+Enable **Live transcript bridge (MCP)** in the popup, set the bridge URL (`http://127.0.0.1:6338`) and a shared token. Build and wiring instructions for the bridge are in [`bridge/README.md`](bridge/README.md).
 
 ## Known limitations
 
-- English locale only (`aria-label="Captions"` is localized)
-- Live transcript capture stops on tab close/reload
-- File-based auto-save depends on browser support for the file picker API
+- English locale only (the caption region and "Turn on captions" labels are localized)
+- The transcript lives only in the tab — export it (Copy / Download) or stream it to the bridge before closing; it is not persisted
+- Auto-enabling captions is best-effort; if Meet hides the control behind a menu, turn captions on manually
 - Side panel captions only (bottom overlay mode not yet supported)
 - Panel close/reopen may duplicate recent entries
 - Clearing mid-sentence may include some pre-clear text in the next capture

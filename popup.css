@@ -76,49 +76,6 @@ h1 {
   display: none;
 }
 
-.auto-save {
-  margin-bottom: 12px;
-}
-
-.auto-save-info {
-  font-size: 12px;
-  color: #5f6368;
-  margin-bottom: 6px;
-}
-
-.auto-save-interval {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: #5f6368;
-  margin-bottom: 8px;
-}
-
-.auto-save-interval input {
-  width: 56px;
-  padding: 6px 8px;
-  border: 1px solid #dadce0;
-  border-radius: 4px;
-  font-size: 13px;
-  color: #202124;
-}
-
-.auto-save-error-msg {
-  font-size: 12px;
-  color: #d93025;
-  margin-bottom: 6px;
-}
-
-.auto-save-error-actions {
-  display: flex;
-  gap: 6px;
-}
-
-.auto-save-error-actions button {
-  flex: 1;
-}
-
 .actions {
   display: flex;
   flex-direction: column;
@@ -151,6 +108,53 @@ button:disabled {
 
 .btn-danger:hover:not(:disabled) {
   background: #fce8e6;
+}
+
+.bridge {
+  border-top: 1px solid #ecedef;
+  padding-top: 12px;
+  margin-bottom: 12px;
+}
+
+.bridge-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #202124;
+  cursor: pointer;
+}
+
+.bridge-input {
+  width: 100%;
+  padding: 6px 8px;
+  margin-top: 8px;
+  border: 1px solid #dadce0;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #202124;
+}
+
+.bridge-state {
+  font-size: 11px;
+  margin-top: 8px;
+  padding: 6px 8px;
+  border-radius: 4px;
+}
+
+.bridge-state.bridge-ok {
+  background: #e6f4ea;
+  color: #1a8e3b;
+}
+
+.bridge-state.bridge-warn {
+  background: #fef7e0;
+  color: #b06000;
+}
+
+.bridge-state.bridge-error {
+  background: #fce8e6;
+  color: #d93025;
 }
 
 .footer {
