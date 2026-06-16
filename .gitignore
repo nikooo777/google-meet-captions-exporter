@@ -1,0 +1,2 @@
+# Compiled MCP bridge binary (build with: cd bridge && go build -o ../meet-bridge ./cmd/meet-bridge)
+/meet-bridge
