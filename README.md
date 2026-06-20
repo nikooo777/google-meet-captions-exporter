@@ -31,9 +31,9 @@ Chrome extension that captures closed captions from Google Meet in real time and
 
 ## Live transcript bridge (MCP)
 
-During a call you can let an LLM assistant read the rolling transcript on demand — ask it to help craft a reply and it pulls the latest captions itself. The extension streams the transcript to a small local Go process (`meet-bridge`) that exposes it over the Model Context Protocol, so any MCP client (Claude Desktop/Code, Codex) can attach.
+During a call you can let an LLM assistant read the rolling transcript on demand — ask it to help craft a reply and it pulls the latest captions itself. The extension streams the transcript to a small always-on local server (`meet-bridge`, typically a systemd user service) that exposes it over the Model Context Protocol on HTTP, so MCP clients (Claude, Codex) connect by URL — several can read at once.
 
-Enable **Live transcript bridge (MCP)** in the popup, set the bridge URL (`http://127.0.0.1:6338`) and a shared token. Build and wiring instructions for the bridge are in [`bridge/README.md`](bridge/README.md).
+Enable **Live transcript bridge (MCP)** in the popup, set the bridge URL (`http://127.0.0.1:6338`) and a shared token. Build, run-as-a-service, and client-wiring instructions are in [`bridge/README.md`](bridge/README.md).
 
 ## Known limitations
 
