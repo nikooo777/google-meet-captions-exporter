@@ -9,6 +9,7 @@ Chrome extension that captures closed captions from Google Meet in real time and
 - Copy to clipboard or download as `.txt`
 - Automatically enables captions and starts capturing when you join a meeting
 - Live transcript access for LLM assistants via a local MCP bridge (Claude, Codex, …)
+- Separate saved capture sessions, with automatic retries and visible disk-save errors
 
 ## Install
 
@@ -33,16 +34,24 @@ Chrome extension that captures closed captions from Google Meet in real time and
 
 During a call you can let an LLM assistant read the rolling transcript on demand — ask it to help craft a reply and it pulls the latest captions itself. The extension streams the transcript to a small always-on local server (`meet-bridge`, typically a systemd user service) that exposes it over the Model Context Protocol on HTTP, so MCP clients (Claude, Codex) connect by URL — several can read at once.
 
-Enable **Live transcript bridge (MCP)** in the popup, set the bridge URL (`http://127.0.0.1:6338`) and a shared token. Build, run-as-a-service, and client-wiring instructions are in [`bridge/README.md`](bridge/README.md).
+The bridge is enabled by default at `http://127.0.0.1:6338`; no token setup is needed. The popup lets you change the URL or enter an optional token if you enabled authentication on the daemon. Build, run-as-a-service, and client-wiring instructions are in [`bridge/README.md`](bridge/README.md).
+
+Streaming starts after you join a call and stops when you leave. The daemon saves each capture session separately, so reloading, rejoining, or clearing the popup cannot overwrite an earlier session's file. If saving fails, the popup reports the error and the daemon retries the latest snapshot every two seconds.
+
+When upgrading, rebuild and restart the bridge, reload the unpacked extension, and refresh the Meet tab. Start a new `get_since` baseline without a cursor after upgrading.
 
 ## Known limitations
 
 - English locale only (the caption region and "Turn on captions" labels are localized)
-- The transcript lives only in the tab — export it (Copy / Download) or stream it to the bridge before closing; it is not persisted
+- Without the bridge, the transcript lives only in the tab; export before closing. With the bridge, successfully written snapshots remain on disk. Up to one push interval of recent speech may be missing.
 - Auto-enabling captions is best-effort; if Meet hides the control behind a menu, turn captions on manually
 - Side panel captions only (bottom overlay mode not yet supported)
 - Panel close/reopen may duplicate recent entries
 - Clearing mid-sentence may include some pre-clear text in the next capture
+
+## Checks
+
+Run extension regression tests with `node --test tests/extension.test.js`. In `bridge/`, run `go test -race ./...` and `go vet ./...`.
 
 ## Author
 

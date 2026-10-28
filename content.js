@@ -6,6 +6,7 @@
     TURN_BLOCK: ".nMcdL",
     SPEAKER_NAME: ".NWpY1d",
     TEXT_CONTAINER: ".ygicle",
+    LEAVE_CALL: 'button[aria-label^="Leave call" i], [role="button"][aria-label^="Leave call" i]',
   };
   const STREAM_INTERVAL_MS = 2000;
   const CAPTIONS_BUTTON_LABEL = "turn on captions";
@@ -16,7 +17,14 @@
   let nodeMap = new WeakMap();
 
   let captionObserver = null;
+  let captionRegion = null;
   let recording = false;
+  let meetingActive = false;
+  let meetingId = "";
+  let sessionId = "";
+  let startedAt = 0;
+  let snapshotSequence = 0;
+  let bridgeConfigured = false;
 
   let streamInterval = null;
   let streamEpoch = 0;
@@ -24,6 +32,8 @@
   let bridgeReason = null;
   let bridgeError = null;
   let lastBridgeSuccessAt = null;
+  let persistenceRevision = 0;
+  let persistenceErrors = {};
 
   function ensureEntry(turnEl) {
     let entry = turnMap.get(turnEl);
@@ -120,6 +130,7 @@
     if (captionObserver) captionObserver.disconnect();
 
     bootstrap(region);
+    captionRegion = region;
     recording = true;
 
     captionObserver = new MutationObserver(handleMutations);
@@ -137,23 +148,59 @@
       captionObserver = null;
     }
     recording = false;
+    captionRegion = null;
   }
 
   function startBodyObserver() {
-    const existing = document.querySelector(SELECTORS.CAPTION_REGION);
-    if (existing) attachCaptionObserver(existing);
+    updateMeetingState();
+    const bodyObserver = new MutationObserver(updateMeetingState);
 
-    const bodyObserver = new MutationObserver(() => {
-      maybeEnableCaptions();
-      const region = document.querySelector(SELECTORS.CAPTION_REGION);
-      if (region && !captionObserver) {
-        attachCaptionObserver(region);
-      } else if (!region && captionObserver) {
-        detachCaptionObserver();
-      }
+    bodyObserver.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["aria-label"],
     });
+  }
 
-    bodyObserver.observe(document.body, { childList: true, subtree: true });
+  function resetCapture() {
+    transcript.length = 0;
+    turnMap = new WeakMap();
+    nodeMap = new WeakMap();
+    sessionId = crypto.randomUUID();
+    startedAt = Date.now();
+    snapshotSequence = 0;
+  }
+
+  function finishCapture() {
+    const snapshot = serializeTranscript(false);
+    const wasStreaming = bridgeStreaming;
+    stopBridgeStream();
+    if (wasStreaming) pushToBridge(snapshot);
+  }
+
+  function updateMeetingState() {
+    const currentMeetingId = getMeetingId();
+    const joined = !!currentMeetingId && !!document.querySelector(SELECTORS.LEAVE_CALL);
+    if (meetingActive && (!joined || currentMeetingId !== meetingId)) {
+      finishCapture();
+      detachCaptionObserver();
+      meetingActive = false;
+    }
+    if (joined && !meetingActive) {
+      meetingId = currentMeetingId;
+      resetCapture();
+      captionsClicked = false;
+      meetingActive = true;
+    }
+    if (!meetingActive) return;
+    maybeEnableCaptions();
+    const region = document.querySelector(SELECTORS.CAPTION_REGION);
+    if (region !== captionRegion) {
+      detachCaptionObserver();
+      if (region) attachCaptionObserver(region);
+    }
+    if (bridgeConfigured && !bridgeStreaming) startBridgeStream();
   }
 
   function formatTranscript() {
@@ -176,7 +223,7 @@
     return match ? match[0] : "";
   }
 
-  function serializeTranscript() {
+  function serializeTranscript(active = meetingActive) {
     const entries = [];
     for (const entry of transcript) {
       const text = entry.segments
@@ -195,17 +242,46 @@
         updated_at: updatedAt,
       });
     }
-    return { meeting_id: getMeetingId(), captured_at: Date.now(), entries };
+    return {
+      meeting_id: meetingId,
+      session_id: sessionId,
+      started_at: startedAt,
+      captured_at: Date.now(),
+      sequence: ++snapshotSequence,
+      active,
+      entries,
+    };
   }
 
-  async function pushToBridge() {
-    const snapshot = serializeTranscript();
+  function updatePersistenceStatus(response, snapshot) {
+    const revision = response?.persistenceRevision;
+    const errors = response?.persistenceErrors;
+    const hasStatus = Number.isSafeInteger(revision) && revision > 0 &&
+      errors && typeof errors === "object" && !Array.isArray(errors) &&
+      Object.values(errors).every((error) => typeof error === "string");
+    if (hasStatus) {
+      if (revision > persistenceRevision) {
+        persistenceRevision = revision;
+        persistenceErrors = { ...errors };
+      }
+      return;
+    }
+    if (response?.reason === "persistence") {
+      const key = snapshot.meeting_id + "/" + snapshot.session_id;
+      persistenceErrors = { ...persistenceErrors, [key]: response.error || "Save failed" };
+    }
+  }
+
+  async function pushToBridge(snapshot = serializeTranscript()) {
+    const epoch = streamEpoch;
     try {
       const response = await chrome.runtime.sendMessage({
         type: "PUSH_TO_BRIDGE",
         snapshot,
       });
-      if (response?.ok) {
+      updatePersistenceStatus(response, snapshot);
+      if (epoch !== streamEpoch) return;
+      if (response?.ok || response?.reason === "persistence") {
         bridgeReason = null;
         bridgeError = null;
         lastBridgeSuccessAt = Date.now();
@@ -214,6 +290,7 @@
         bridgeError = response?.error || null;
       }
     } catch (err) {
+      if (epoch !== streamEpoch) return;
       bridgeReason = "unreachable";
       bridgeError = err?.message || "send failed";
     }
@@ -259,9 +336,8 @@
     } catch {
       return;
     }
-    const hasConfig =
-      !!cfg.bridgeToken?.trim() && !!cfg.bridgeUrl?.trim();
-    const enabled = hasConfig && cfg.bridgeEnabled !== false;
+    bridgeConfigured = cfg.bridgeEnabled !== false;
+    const enabled = bridgeConfigured && meetingActive;
     if (enabled && !bridgeStreaming) {
       startBridgeStream();
     } else if (!enabled && bridgeStreaming) {
@@ -325,6 +401,7 @@
         bridgeReason,
         bridgeError,
         lastBridgeSuccessAt,
+        persistenceErrors,
       });
       return;
     }
@@ -338,16 +415,14 @@
     // next captured segment; Meet rewrites whole nodes during refinement, so
     // there's no reliable way to subtract a pre-clear prefix.
     if (message.type === "CLEAR_TRANSCRIPT") {
-      transcript.length = 0;
-      turnMap = new WeakMap();
-      nodeMap = new WeakMap();
-      if (bridgeStreaming) pushToBridge();
+      finishCapture();
+      resetCapture();
+      if (meetingActive && bridgeConfigured) startBridgeStream();
       sendResponse({ ok: true });
       return;
     }
   });
 
   startBodyObserver();
-  maybeEnableCaptions();
   syncBridgeFromConfig();
 })();

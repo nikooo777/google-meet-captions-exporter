@@ -53,15 +53,27 @@ function setButtons(entryCount) {
 
 function renderBridgeState(response) {
   bridgeStateEl.className = "bridge-state";
+  const saveErrors = Object.values(response.persistenceErrors || {});
+  if (saveErrors.length) {
+    bridgeStateEl.textContent = "Transcript save pending. Retrying: " + saveErrors[0];
+    bridgeStateEl.classList.add("bridge-error");
+    return;
+  }
   if (!bridgeEnable.checked) {
     bridgeStateEl.classList.add("hidden");
     return;
   }
   if (response.bridgeReason === "not-configured") {
-    bridgeStateEl.textContent = "Not configured — set the bridge URL and token.";
+    bridgeStateEl.textContent = response.bridgeError || "Set a local bridge URL.";
     bridgeStateEl.classList.add("bridge-warn");
+  } else if (response.bridgeReason === "authentication") {
+    bridgeStateEl.textContent = response.bridgeError;
+    bridgeStateEl.classList.add("bridge-error");
   } else if (response.bridgeReason === "unreachable") {
-    bridgeStateEl.textContent = "Bridge unreachable — is the MCP client running?";
+    bridgeStateEl.textContent = "Bridge unreachable. Is the bridge service running?";
+    bridgeStateEl.classList.add("bridge-error");
+  } else if (response.bridgeReason === "persistence") {
+    bridgeStateEl.textContent = "Captions received, but saving failed. Retrying: " + response.bridgeError;
     bridgeStateEl.classList.add("bridge-error");
   } else if (response.bridgeStreaming) {
     bridgeStateEl.textContent = response.lastBridgeSuccessAt
